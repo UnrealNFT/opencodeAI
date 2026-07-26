@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Villagers 3D - Ville Procédurale</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            overflow: hidden;
+            color: #fff;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #00ffff;
+            backdrop-filter: blur(10px);
+            max-width: 300px;
+            z-index: 100;
+        }
+        
+        #info-panel h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #00ffff;
+            text-shadow: 0 0 10px #00ffff;
+        }
+        
+        #info-panel p {
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #ccc;
+        }
+        
+        .control-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .control-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+        }
+        
+        #stats {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #ff00ff;
+            backdrop-filter: blur(10px);
+            font-family: monospace;
+        }
+        
+        .stat-line {
+            color: #ff00ff;
+            margin: 5px 0;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #00ffff;
+            text-shadow: 0 0 20px #00ffff;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="info-panel">
+        <h1>🏙️ Villagers 3D</h1>
+        <p>Ville procédurale générée en temps réel</p>
+        <p><strong>Contrôles:</strong></p>
+        <p>🖱️ Clic gauche + glisser : Rotation</p>
+        <p>🖱️ Molette : Zoom</p>
+        <p>🖱️ Clic droit + glisser : Pan</p>
+        <button class="control-btn" onclick="regenerateCity()">🔄 Régénérer</button>
+        <button class="control-btn" onclick="toggleAnimation()">⏯️ Animation</button>
+    </div>
+    
+    <div id="stats">
+        <div class="stat-line">Bâtiments: <span id="building-count">0</span></div>
+        <div class="stat-line">Arbres: <span id="tree-count">0</span></div>
+        <div class="stat-line">Routes: <span id="road-count">0</span></div>
+    </div>
+    
+    <div id="loading">Génération de la ville...</div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Configuration globale
+        let scene, camera, renderer, controls;
+        let buildings = [];
+        let trees = [];
+        let roads = [];
+        let animationEnabled = true;
+        let time = 0;
+        
+        // Initialisation
+        function init() {
+            // Scène
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0a);
+            scene.fog = new THREE.Fog(0x0a0a0a, 50, 200);
+            
+            // Caméra
+            camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(50, 50, 50);
+            camera.lookAt(0, 0, 0);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            // Contrôles OrbitControls (implémentation simple)
+            setupControls();
+            
+            // Lumières
+            setupLights();
+            
+            // Sol
+            createGround();
+            
+            // Génération de la ville
+            generateCity();
+            
+            // Événements
+            window.addEventListener('resize', onWindowResize);
+            
+            // Masquer le loading
+            document.getElementById('loading').style.display = 'none';
+            
+            // Animation
+            animate();
+        }
+        
+        // Configuration des lumières
+        function setupLights() {
+            // Lumière ambiante
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+            
+            // Lumière directionnelle (soleil)
+            const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            sunLight.position.set(50, 100, 50);
+            sunLight.castShadow = true;
+            sunLight.shadow.camera.left = -100;
+            sunLight.shadow.camera.right = 100;
+            sunLight.shadow.camera.top = 100;
+            sunLight.shadow.camera.bottom = -100;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+            
+            // Lumière d'appoint
+            const fillLight = new THREE.DirectionalLight(0x4466ff, 0.3);
+            fillLight.position.set(-50, 50, -50);
+            scene.add(fillLight);
+            
+            // Lumières ponctuelles colorées
+            const pointLight1 = new THREE.PointLight(0xff00ff, 0.5, 100);
+            pointLight1.position.set(30, 20, 30);
+            scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0x00ffff, 0.5, 100);
+            pointLight2.position.set(-30, 20, -30);
+            scene.add(pointLight2);
+        }
+        
+        // Création du sol
+        function createGround() {
+            const groundGeometry = new THREE.PlaneGeometry(200, 200, 50, 50);
+            const groundMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1a1a1a,
+                roughness: 0.8,
+                metalness: 0.2,
+                wireframe: false
+            });
+            
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            
+            // Ajout de variation au terrain
+            const vertices = ground.geometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                vertices[i + 2] = Math.random() * 0.5;
+            }
+            ground.geometry.attributes.position.needsUpdate = true;
+            ground.geometry.computeVertexNormals();
+            
+            scene.add(ground);
+            
+            // Grille
+            const gridHelper = new THREE.GridHelper(200, 100, 0x00ffff, 0x333333);
+            gridHelper.position.y = 0.1;
+            scene.add(gridHelper);
+        }
+        
+        // Génération de la ville
+        function generateCity() {
+            clearCity();
+            
+            const citySize = 15;
+            const blockSize = 8;
+            const roadWidth = 3;
+            
+            // Génération des routes
+            for (let x = -citySize; x <= citySize; x += blockSize) {
+                createRoad(x, -citySize, x, citySize, roadWidth);
+            }
+            for (let z = -citySize; z <= citySize; z += blockSize) {
+                createRoad(-citySize, z, citySize, z, roadWidth);
+            }
+            
+            // Génération des bâtiments et arbres
+            for (let x = -citySize + blockSize / 2; x < citySize; x += blockSize) {
+                for (let z = -citySize + blockSize / 2; z < citySize; z += blockSize) {
+                    if (Math.random() > 0.3) {
+                        createBuilding(x, z, blockSize - roadWidth);
+                    } else {
+                        // Parc avec arbres
+                        const treeCount = Math.floor(Math.random() * 5) + 3;
+                        for (let i = 0; i < treeCount; i++) {
+                            const offsetX = (Math.random() - 0.5) * (blockSize - roadWidth);
+                            const offsetZ = (Math.random() - 0.5) * (blockSize - roadWidth);
+                            createTree(x + offsetX, z + offsetZ);
+                        }
+                    }
+                }
+            }
+            
+            updateStats();
+        }
+        
+        // Création d'un bâtiment
+        function createBuilding(x, z, maxSize) {
+            const width = Math.random() * 3 + 2;
+            const depth = Math.random() * 3 + 2;
+            const height = Math.random() * 20 + 5;
+            
+            const geometry = new THREE.BoxGeometry(width, height, depth);
+            
+            // Matériau avec couleur aléatoire
+            const hue = Math.random();
+            const color = new THREE.Color().setHSL(hue, 0.7, 0.5);
+            const material = new THREE.MeshStandardMaterial({
+                color: color,
+                roughness: 0.4,
+                metalness: 0.6,
+                emissive: color,
+                emissiveIntensity: 0.2
+            });
+            
+            const building = new THREE.Mesh(geometry, material);
+            building.position.set(x, height / 2, z);
+            building.castShadow = true;
+            building.receiveShadow = true;
+            
+            // Données pour l'animation
+            building.userData = {
+                originalY: height / 2,
+                speed: Math.random() * 0.5 + 0.5,
+                amplitude: Math.random() * 0.3 + 0.1
+            };
+            
+            scene.add(building);
+            buildings.push(building);
+            
+            // Fenêtres
+            createWindows(building, width, height, depth);
+        }
+        
+        // Création des fenêtres
+        function createWindows(building, width, height, depth) {
+            const windowSize = 0.3;
+            const windowSpacing = 1;
+            const windowMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffff00,
+                emissive: 0xffff00,
+                emissiveIntensity: Math.random() > 0.3 ? 1 : 0
+            });
+            
+            for (let y = 2; y < height; y += windowSpacing) {
+                for (let side = 0; side < 4; side++) {
+                    const windowCount = side % 2 === 0 ? Math.floor(width / windowSpacing) : Math.floor(depth / windowSpacing);
+                    for (let i = 0; i < windowCount; i++) {
+                        const windowGeo = new THREE.BoxGeometry(windowSize, windowSize, 0.1);
+                        const windowMesh = new THREE.Mesh(windowGeo, windowMaterial.clone());
+                        
+                        let offsetX = 0, offsetZ = 0;
+                        if (side === 0) { // Front
+                            offsetX = (i - windowCount / 2) * windowSpacing;
+                            offsetZ = depth / 2;
+                        } else if (side === 1) { // Right
+                            offsetX = width / 2;
+                            offsetZ = (i - windowCount / 2) * windowSpacing;
+                        } else if (side === 2) { // Back
+                            offsetX = (i - windowCount / 2) * windowSpacing;
+                            offsetZ = -depth / 2;
+                        } else { // Left
+                            offsetX = -width / 2;
+                            offsetZ = (i - windowCount / 2) * windowSpacing;
+                        }
+                        
+                        windowMesh.position.set(offsetX, y - height / 2, offsetZ);
+                        if (side === 1 || side === 3) {
+                            windowMesh.rotation.y = Math.PI / 2;
+                        }
+                        
+                        building.add(windowMesh);
+                    }
+                }
+            }
+        }
+        
+        // Création d'un arbre
+        function createTree(x, z) {
+            const trunkHeight = Math.random() * 2 + 2;
+            const trunkRadius = 0.2;
+            
+            // Tronc
+            const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
+            const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x4a2511 });
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.set(x, trunkHeight / 2, z);
+            trunk.castShadow = true;
+            scene.add(trunk);
+            
+            // Feuillage
+            const foliageGeometry = new THREE.SphereGeometry(Math.random() * 1.5 + 1, 8, 8);
+            const foliageMaterial = new THREE.MeshStandardMaterial({ color: 0x22aa22 });
+            const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+            foliage.position.set(x, trunkHeight + 1, z);
+            foliage.castShadow = true;
+            scene.add(foliage);
+            
+            trees.push({ trunk, foliage });
+        }
+        
+        // Création d'une route
+        function createRoad(x1, z1, x2, z2, width) {
+            const length = Math.sqrt((x2 - x1) ** 2 + (z2 - z1) ** 2);
+            const angle = Math.atan2(z2 - z1, x2 - x1);
+            
+            const roadGeometry = new THREE.PlaneGeometry(length, width);
+            const roadMaterial = new THREE.MeshStandardMaterial({
+                color: 0x333333,
+                roughness: 0.9
+            });
+            
+            const road = new THREE.Mesh(roadGeometry, roadMaterial);
+            road.rotation.x = -Math.PI / 2;
+            road.rotation.z = angle;
+            road.position.set((x1 + x2) / 2, 0.05, (z1 + z2) / 2);
+            road.receiveShadow = true;
+            
+            scene.add(road);
+            roads.push(road);
+            
+            // Marquage routier
+            const lineGeometry = new THREE.PlaneGeometry(length, 0.2);
+            const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const line = new THREE.Mesh(lineGeometry, lineMaterial);
+            line.rotation.x = -Math.PI / 2;
+            line.rotation.z = angle;
+            line.position.set((x1 + x2) / 2, 0.1, (z1 + z2) / 2);
+            scene.add(line);
+            roads.push(line);
+        }
+        
+        // Nettoyage de la ville
+        function clearCity() {
+            buildings.forEach(b => {
+                scene.remove(b);
+                b.geometry.dispose();
+                b.material.dispose();
+            });
+            trees.forEach(t => {
+                scene.remove(t.trunk);
+                scene.remove(t.foliage);
+                t.trunk.geometry.dispose();
+                t.trunk.material.dispose();
+                t.foliage.geometry.dispose();
+                t.foliage.material.dispose();
+            });
+            roads.forEach(r => {
+                scene.remove(r);
+                r.geometry.dispose();
+                r.material.dispose();
+            });
+            
+            buildings = [];
+            trees = [];
+            roads = [];
+        }
+        
+        // Mise à jour des statistiques
+        function updateStats() {
+            document.getElementById('building-count').textContent = buildings.length;
+            document.getElementById('tree-count').textContent = trees.length;
+            document.getElementById('road-count').textContent = roads.length;
+        }
+        
+        // Animation
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (animationEnabled) {
+                time += 0.01;
+                
+                // Animation des bâtiments
+                buildings.forEach((building, index) => {
+                    const { originalY, speed, amplitude } = building.userData;
+                    building.position.y = originalY + Math.sin(time * speed + index) * amplitude;
+                    building.rotation.y += 0.001;
+                });
+                
+                // Animation des arbres
+                trees.forEach((tree, index) => {
+                    tree.foliage.rotation.y += 0.005;
+                    tree.foliage.position.y = tree.trunk.position.y + tree.trunk.geometry.parameters.height / 2 + 1 + Math.sin(time * 2 + index) * 0.1;
+                });
+            }
+            
+            updateControls();
+            renderer.render(scene, camera);
+        }
+        
+        // Contrôles de la caméra (implémentation simple)
+        let isMouseDown = false;
+        let isRightMouseDown = false;
+        let mouseX = 0;
+        let mouseY = 0;
+        let targetRotationX = Math.PI / 6;
+        let targetRotationY = Math.PI / 4;
+        let cameraDistance = 80;
+        let cameraPanX = 0;
+        let cameraPanZ = 0;
+        
+        function setupControls() {
+            const container = document.getElementById('canvas-container');
+            
+            container.addEventListener('mousedown', (e) => {
+                if (e.button === 0) {
+                    isMouseDown = true;
+                } else if (e.button === 2) {
+                    isRightMouseDown = true;
+                    e.preventDefault();
+                }
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+            
+            container.addEventListener('mouseup', (e) => {
+                if (e.button === 0) {
+                    isMouseDown = false;
+                } else if (e.button === 2) {
+                    isRightMouseDown = false;
+                }
+            });
+            
+            container.addEventListener('mousemove', (e) => {
+                if (isMouseDown) {
+                    const deltaX = e.clientX - mouseX;
+                    const deltaY = e.clientY - mouseY;
+                    targetRotationY += deltaX * 0.005;
+                    targetRotationX += deltaY * 0.005;
+                    targetRotationX = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, targetRotationX));
+                } else if (isRightMouseDown) {
+                    const deltaX = e.clientX - mouseX;
+                    const deltaY = e.clientY - mouseY;
+                    cameraPanX -= deltaX * 0.05;
+                    cameraPanZ -= deltaY * 0.05;
+                }
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+            
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                cameraDistance += e.deltaY * 0.05;
+                cameraDistance = Math.max(20, Math.min(150, cameraDistance));
+            });
+            
+            container.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+        
+        function updateControls() {
+            const x = cameraDistance * Math.sin(targetRotationX) * Math.cos(targetRotationY) + cameraPanX;
+            const y = cameraDistance * Math.cos(targetRotationX);
+            const z = cameraDistance * Math.sin(targetRotationX) * Math.sin(targetRotationY) + cameraPanZ;
+            
+            camera.position.x = x;
+            camera.position.y = y;
+            camera.position.z = z;
+            camera.lookAt(cameraPanX, 0, cameraPanZ);
+        }
+        
+        // Redimensionnement de la fenêtre
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Fonctions globales
+        function regenerateCity() {
+            document.getElementById('loading').style.display = 'block';
+            setTimeout(() => {
+                generateCity();
+                document.getElementById('loading').style.display = 'none';
+            }, 100);
+        }
+        
+        function toggleAnimation() {
+            animationEnabled = !animationEnabled;
+        }
+        
+        // Démarrage
+        init();
+    </script>
+</body>
+</html>
