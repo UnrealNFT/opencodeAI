@@ -3,22 +3,85 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VillageBeat</title>
+<title>VillageBeat 3D</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:sans-serif;background:#0a0a0a;color:#fff;overflow:hidden}canvas{display:block;width:100vw;height:100vh}#ui{position:fixed;top:20px;left:20px;z-index:10;background:rgba(0,0,0,.8);padding:20px;border-radius:8px;max-width:300px}h1{font-size:24px;margin-bottom:10px}button,label.file{display:inline-block;padding:10px 20px;margin:5px;background:#ff4500;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:14px}button:hover,label.file:hover{background:#ff6a33}input[type=file]{display:none}#stats{margin-top:15px;font-size:12px;opacity:.8}#bar{width:100%;height:4px;background:#333;margin-top:10px;border-radius:2px;overflow:hidden}#fill{height:100%;background:#ff4500;width:0%;transition:width .1s}
+*{margin:0;padding:0}body{font-family:Arial;overflow:hidden;color:#fff}
+#info{position:absolute;top:20px;left:20px;background:rgba(0,0,0,.9);padding:20px;border-radius:15px;border:3px solid #0ff;z-index:100;max-width:320px}
+h1{color:#0ff;font-size:26px;margin-bottom:10px}p{margin:8px 0;font-size:14px}
+label.file{display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);border:0;color:#fff;padding:12px 24px;margin:8px 5px;border-radius:10px;cursor:pointer;font-weight:bold;font-size:15px}
+label.file:hover{transform:scale(1.05)}input[type=file]{display:none}
+#stats{margin-top:15px;font-size:13px;color:#0ff}
+#bar{width:100%;height:6px;background:#333;margin-top:12px;border-radius:3px;overflow:hidden}
+#fill{height:100%;background:linear-gradient(90deg,#667eea,#764ba2);width:0%;transition:width .1s}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="ui">
-<h1>🏘️ VillageBeat</h1>
-<p style="font-size:13px;margin-bottom:10px">Ta musique génère une ville au rythme des beats</p>
-<label class="file">🎵 Importer MP3<input type="file" id="f" accept="audio/*"></label>
-<div id="stats">Bâtiments: 0 · Temps: 0s</div>
+<div id="info">
+<h1>🏝️ VillageBeat 3D</h1>
+<p>🎵 Ta musique génère une ville 3D sur une île au rythme des beats</p>
+<label class="file">🎵 Importer Musique<input type="file" id="f" accept="audio/*"></label>
+<div id="stats">Bâtiments: 0 | Temps: 0s</div>
 <div id="bar"><div id="fill"></div></div>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-const c=document.getElementById('c'),ctx=c.getContext('2d'),f=document.getElementById('f'),stats=document.getElementById('stats'),fill=document.getElementById('fill');let w,h,buildings=[],audio,audioCtx,analyser,dataArray,bufferLength,startTime,duration=0;function resize(){w=c.width=window.innerWidth;h=c.height=window.innerHeight}resize();window.addEventListener('resize',resize);f.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const url=URL.createObjectURL(file);if(audio){audio.pause();audio=null}audio=new Audio(url);audioCtx=new(window.AudioContext||window.webkitAudioContext)();const src=audioCtx.createMediaElementSource(audio);analyser=audioCtx.createAnalyser();analyser.fftSize=256;bufferLength=analyser.frequencyBinCount;dataArray=new Uint8Array(bufferLength);src.connect(analyser);analyser.connect(audioCtx.destination);audio.play();audio.addEventListener('loadedmetadata',()=>{duration=audio.duration;startTime=Date.now()});buildings=[]});function addBuilding(x,y,w,h,col){buildings.push({x,y,w,h,col})}function draw(){ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,w,h);if(analyser){analyser.getByteFrequencyData(dataArray);let bass=dataArray.slice(0,8).reduce((a,b)=>a+b,0)/8;let mid=dataArray.slice(8,32).reduce((a,b)=>a+b,0)/24;if(bass>140&&Math.random()>.5){let bx=Math.random()*w,by=h-Math.random()*200,bw=20+Math.random()*40,bh=50+bass/2,col=`hsl(${mid},70%,60%)`;addBuilding(bx,by,bw,bh,col)}}buildings.forEach(b=>{ctx.fillStyle=b.col;ctx.fillRect(b.x,b.y-b.h,b.w,b.h);ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.strokeRect(b.x,b.y-b.h,b.w,b.h)});if(audio&&!audio.paused){let elapsed=(Date.now()-startTime)/1000;let progress=duration>0?elapsed/duration:0;fill.style.width=(progress*100)+'%';stats.textContent=`Bâtiments: ${buildings.length} · Temps: ${elapsed.toFixed(1)}s`}requestAnimationFrame(draw)}draw();
+let scene,camera,renderer,buildings=[],ocean,t=0,audio,audioCtx,analyser,dataArray,startTime,duration=0;
+scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
+scene.fog=new THREE.Fog(0x87ceeb,100,300);
+camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,1000);
+camera.position.set(0,40,60);
+camera.lookAt(0,5,0);
+renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+document.body.appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0xffffff,.7));
+const sun=new THREE.DirectionalLight(0xffffdd,1);
+sun.position.set(60,80,40);
+sun.castShadow=true;
+scene.add(sun);
+const og=new THREE.PlaneGeometry(400,400,60,60);
+og.rotateX(-Math.PI/2);
+ocean=new THREE.Mesh(og,new THREE.MeshStandardMaterial({color:0x0077be,transparent:true,opacity:.8,roughness:.2}));
+ocean.position.y=-2;
+scene.add(ocean);
+const beach=new THREE.Mesh(new THREE.CylinderGeometry(45,50,4,40),new THREE.MeshStandardMaterial({color:0xd4b896}));
+beach.position.y=1;
+beach.receiveShadow=true;
+scene.add(beach);
+const island=new THREE.Mesh(new THREE.CylinderGeometry(38,45,5,40),new THREE.MeshStandardMaterial({color:0x3a9d3f}));
+island.position.y=3.5;
+island.receiveShadow=true;
+scene.add(island);
+document.getElementById('f').addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const url=URL.createObjectURL(file);if(audio){audio.pause();audio=null}audio=new Audio(url);audioCtx=new(window.AudioContext||window.webkitAudioContext)();const src=audioCtx.createMediaElementSource(audio);analyser=audioCtx.createAnalyser();analyser.fftSize=512;dataArray=new Uint8Array(analyser.frequencyBinCount);src.connect(analyser);analyser.connect(audioCtx.destination);audio.play();audio.addEventListener('loadedmetadata',()=>{duration=audio.duration;startTime=Date.now()});buildings=[]});
+function addBuilding(bass,mid,high){
+const a=Math.random()*Math.PI*2,r=8+Math.random()*25;
+const h=6+bass/15;
+const b=new THREE.Mesh(new THREE.BoxGeometry(3+Math.random()*2,h,3+Math.random()*2),new THREE.MeshStandardMaterial({color:new THREE.Color(`hsl(${mid*1.4},${60+high/4}%,${50+bass/8}%)`)}));
+b.position.set(Math.cos(a)*r,5+h/2,Math.sin(a)*r);
+b.castShadow=true;
+b.receiveShadow=true;
+scene.add(b);
+buildings.push(b);}
+function animate(){
+requestAnimationFrame(animate);
+t+=.015;
+const p=ocean.geometry.attributes.position;
+for(let i=0;i<p.count;i++)p.setY(i,Math.sin(t*2.5+p.getX(i)*.25)*.7+Math.cos(t*1.8+p.getZ(i)*.25)*.7);
+p.needsUpdate=true;
+if(analyser&&audio&&!audio.paused){
+analyser.getByteFrequencyData(dataArray);
+let bass=dataArray.slice(0,12).reduce((a,b)=>a+b,0)/12;
+let mid=dataArray.slice(12,48).reduce((a,b)=>a+b,0)/36;
+let high=dataArray.slice(48,80).reduce((a,b)=>a+b,0)/32;
+if(bass>145&&Math.random()>.4)addBuilding(bass,mid,high);
+let elapsed=(Date.now()-startTime)/1000;
+let progress=duration>0?elapsed/duration:0;
+document.getElementById('fill').style.width=(progress*100)+'%';
+document.getElementById('stats').textContent=`Bâtiments: ${buildings.length} | Temps: ${elapsed.toFixed(1)}s`;}
+renderer.render(scene,camera);}
+animate();
 </script>
 </body>
 </html>
