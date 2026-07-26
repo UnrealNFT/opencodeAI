@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Villagers 3D - Ville Procédurale</title>
+    <title>Villagers 3D - Ville Procédurale Vivante</title>
     <style>
         * {
             margin: 0;
@@ -84,6 +84,20 @@
             margin: 5px 0;
         }
         
+        #time-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 10px;
+            border: 2px solid #ffaa00;
+            backdrop-filter: blur(10px);
+            font-size: 20px;
+            color: #ffaa00;
+            text-shadow: 0 0 10px #ffaa00;
+        }
+        
         #loading {
             position: absolute;
             top: 50%;
@@ -100,19 +114,23 @@
     
     <div id="info-panel">
         <h1>🏙️ Villagers 3D</h1>
-        <p>Ville procédurale générée en temps réel</p>
+        <p>Ville procédurale vivante</p>
         <p><strong>Contrôles:</strong></p>
         <p>🖱️ Clic gauche + glisser : Rotation</p>
         <p>🖱️ Molette : Zoom</p>
         <p>🖱️ Clic droit + glisser : Pan</p>
         <button class="control-btn" onclick="regenerateCity()">🔄 Régénérer</button>
         <button class="control-btn" onclick="toggleAnimation()">⏯️ Animation</button>
+        <button class="control-btn" onclick="toggleDayNight()">🌗 Jour/Nuit</button>
     </div>
+    
+    <div id="time-display">🌅 <span id="time-text">06:00</span></div>
     
     <div id="stats">
         <div class="stat-line">Bâtiments: <span id="building-count">0</span></div>
         <div class="stat-line">Arbres: <span id="tree-count">0</span></div>
-        <div class="stat-line">Routes: <span id="road-count">0</span></div>
+        <div class="stat-line">Villageois: <span id="villager-count">0</span></div>
+        <div class="stat-line">Voitures: <span id="car-count">0</span></div>
     </div>
     
     <div id="loading">Génération de la ville...</div>
@@ -124,8 +142,16 @@
         let buildings = [];
         let trees = [];
         let roads = [];
+        let villagers = [];
+        let cars = [];
         let animationEnabled = true;
+        let dayNightEnabled = true;
         let time = 0;
+        let dayTime = 6; // 0-24 heures
+        let sunLight, moonLight;
+        
+        // Points de waypoints pour les déplacements
+        let roadWaypoints = [];
         
         // Initialisation
         function init() {
@@ -180,7 +206,7 @@
             scene.add(ambientLight);
             
             // Lumière directionnelle (soleil)
-            const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
             sunLight.position.set(50, 100, 50);
             sunLight.castShadow = true;
             sunLight.shadow.camera.left = -100;
@@ -190,6 +216,11 @@
             sunLight.shadow.mapSize.width = 2048;
             sunLight.shadow.mapSize.height = 2048;
             scene.add(sunLight);
+            
+            // Lumière de la lune
+            moonLight = new THREE.DirectionalLight(0x6666ff, 0.3);
+            moonLight.position.set(-50, 100, -50);
+            scene.add(moonLight);
             
             // Lumière d'appoint
             const fillLight = new THREE.DirectionalLight(0x4466ff, 0.3);
@@ -206,11 +237,88 @@
             scene.add(pointLight2);
         }
         
+        // Mise à jour du cycle jour/nuit
+        function updateDayNight() {
+            if (!dayNightEnabled) return;
+            
+            // Avance le temps (1 minute = 1 seconde réelle)
+            dayTime += 0.01;
+            if (dayTime >= 24) dayTime = 0;
+            
+            const hours = Math.floor(dayTime);
+            const minutes = Math.floor((dayTime - hours) * 60);
+            document.getElementById('time-text').textContent = 
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            
+            // Calcul de l'angle du soleil
+            const sunAngle = (dayTime / 24) * Math.PI * 2 - Math.PI / 2;
+            const sunX = Math.cos(sunAngle) * 100;
+            const sunY = Math.sin(sunAngle) * 100;
+            sunLight.position.set(sunX, Math.abs(sunY), 50);
+            
+            // Intensité du soleil
+            if (dayTime >= 6 && dayTime < 18) {
+                // Jour
+                const dayIntensity = Math.sin((dayTime - 6) / 12 * Math.PI);
+                sunLight.intensity = dayIntensity * 0.8;
+                moonLight.intensity = 0;
+                
+                // Couleur du ciel
+                if (dayTime < 7) {
+                    // Lever du soleil
+                    scene.background = new THREE.Color().lerpColors(
+                        new THREE.Color(0x0a0a2a),
+                        new THREE.Color(0xff6b35),
+                        (dayTime - 6)
+                    );
+                } else if (dayTime < 8) {
+                    scene.background = new THREE.Color().lerpColors(
+                        new THREE.Color(0xff6b35),
+                        new THREE.Color(0x87ceeb),
+                        (dayTime - 7)
+                    );
+                } else if (dayTime < 17) {
+                    scene.background = new THREE.Color(0x87ceeb);
+                } else {
+                    // Coucher du soleil
+                    scene.background = new THREE.Color().lerpColors(
+                        new THREE.Color(0x87ceeb),
+                        new THREE.Color(0xff6b35),
+                        (dayTime - 17)
+                    );
+                }
+            } else {
+                // Nuit
+                sunLight.intensity = 0;
+                moonLight.intensity = 0.3;
+                
+                if (dayTime >= 18 && dayTime < 19) {
+                    scene.background = new THREE.Color().lerpColors(
+                        new THREE.Color(0xff6b35),
+                        new THREE.Color(0x0a0a2a),
+                        (dayTime - 18)
+                    );
+                } else {
+                    scene.background = new THREE.Color(0x0a0a2a);
+                }
+            }
+            
+            // Mettre à jour les fenêtres (allumées la nuit)
+            buildings.forEach(building => {
+                building.children.forEach(child => {
+                    if (child.material && child.material.emissive) {
+                        const isNight = dayTime < 6 || dayTime >= 18;
+                        child.material.emissiveIntensity = isNight && Math.random() > 0.2 ? 1 : 0;
+                    }
+                });
+            });
+        }
+        
         // Création du sol
         function createGround() {
             const groundGeometry = new THREE.PlaneGeometry(200, 200, 50, 50);
             const groundMaterial = new THREE.MeshStandardMaterial({
-                color: 0x1a1a1a,
+                color: 0x1a4d1a,
                 roughness: 0.8,
                 metalness: 0.2,
                 wireframe: false
@@ -239,16 +347,27 @@
         // Génération de la ville
         function generateCity() {
             clearCity();
+            roadWaypoints = [];
             
             const citySize = 15;
             const blockSize = 8;
             const roadWidth = 3;
             
-            // Génération des routes
+            // Génération des routes et waypoints
             for (let x = -citySize; x <= citySize; x += blockSize) {
+                const waypoints = [];
+                for (let z = -citySize; z <= citySize; z += blockSize / 4) {
+                    waypoints.push(new THREE.Vector3(x, 0.5, z));
+                }
+                roadWaypoints.push(...waypoints);
                 createRoad(x, -citySize, x, citySize, roadWidth);
             }
             for (let z = -citySize; z <= citySize; z += blockSize) {
+                const waypoints = [];
+                for (let x = -citySize; x <= citySize; x += blockSize / 4) {
+                    waypoints.push(new THREE.Vector3(x, 0.5, z));
+                }
+                roadWaypoints.push(...waypoints);
                 createRoad(-citySize, z, citySize, z, roadWidth);
             }
             
@@ -267,6 +386,16 @@
                         }
                     }
                 }
+            }
+            
+            // Création des villageois
+            for (let i = 0; i < 20; i++) {
+                createVillager();
+            }
+            
+            // Création des voitures
+            for (let i = 0; i < 10; i++) {
+                createCar();
             }
             
             updateStats();
@@ -328,16 +457,16 @@
                         const windowMesh = new THREE.Mesh(windowGeo, windowMaterial.clone());
                         
                         let offsetX = 0, offsetZ = 0;
-                        if (side === 0) { // Front
+                        if (side === 0) {
                             offsetX = (i - windowCount / 2) * windowSpacing;
                             offsetZ = depth / 2;
-                        } else if (side === 1) { // Right
+                        } else if (side === 1) {
                             offsetX = width / 2;
                             offsetZ = (i - windowCount / 2) * windowSpacing;
-                        } else if (side === 2) { // Back
+                        } else if (side === 2) {
                             offsetX = (i - windowCount / 2) * windowSpacing;
                             offsetZ = -depth / 2;
-                        } else { // Left
+                        } else {
                             offsetX = -width / 2;
                             offsetZ = (i - windowCount / 2) * windowSpacing;
                         }
@@ -351,6 +480,120 @@
                     }
                 }
             }
+        }
+        
+        // Création d'un villageois
+        function createVillager() {
+            const group = new THREE.Group();
+            
+            // Corps
+            const bodyGeometry = new THREE.CylinderGeometry(0.2, 0.3, 1, 8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: Math.random() * 0xffffff 
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 0.5;
+            body.castShadow = true;
+            group.add(body);
+            
+            // Tête
+            const headGeometry = new THREE.SphereGeometry(0.25, 8, 8);
+            const headMaterial = new THREE.MeshStandardMaterial({ color: 0xffdbac });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 1.25;
+            head.castShadow = true;
+            group.add(head);
+            
+            // Position aléatoire sur un waypoint
+            if (roadWaypoints.length > 0) {
+                const randomWaypoint = roadWaypoints[Math.floor(Math.random() * roadWaypoints.length)];
+                group.position.copy(randomWaypoint);
+            }
+            
+            // Données d'animation
+            group.userData = {
+                speed: Math.random() * 0.05 + 0.02,
+                targetWaypoint: Math.floor(Math.random() * roadWaypoints.length),
+                walkCycle: 0
+            };
+            
+            scene.add(group);
+            villagers.push(group);
+        }
+        
+        // Création d'une voiture
+        function createCar() {
+            const group = new THREE.Group();
+            
+            // Carrosserie
+            const bodyGeometry = new THREE.BoxGeometry(0.8, 0.4, 1.6);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: Math.random() * 0xffffff,
+                metalness: 0.7,
+                roughness: 0.3
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 0.3;
+            body.castShadow = true;
+            group.add(body);
+            
+            // Toit
+            const roofGeometry = new THREE.BoxGeometry(0.7, 0.3, 0.8);
+            const roof = new THREE.Mesh(roofGeometry, bodyMaterial);
+            roof.position.y = 0.65;
+            roof.castShadow = true;
+            group.add(roof);
+            
+            // Roues
+            const wheelGeometry = new THREE.CylinderGeometry(0.15, 0.15, 0.1, 8);
+            const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            
+            const wheelPositions = [
+                [-0.4, 0.15, 0.6],
+                [0.4, 0.15, 0.6],
+                [-0.4, 0.15, -0.6],
+                [0.4, 0.15, -0.6]
+            ];
+            
+            wheelPositions.forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                wheel.castShadow = true;
+                group.add(wheel);
+            });
+            
+            // Phares
+            const lightGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const lightMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xffff00,
+                emissive: 0xffff00,
+                emissiveIntensity: 1
+            });
+            
+            const leftLight = new THREE.Mesh(lightGeometry, lightMaterial);
+            leftLight.position.set(-0.3, 0.3, 0.8);
+            group.add(leftLight);
+            
+            const rightLight = new THREE.Mesh(lightGeometry, lightMaterial);
+            rightLight.position.set(0.3, 0.3, 0.8);
+            group.add(rightLight);
+            
+            // Position aléatoire sur un waypoint
+            if (roadWaypoints.length > 0) {
+                const randomWaypoint = roadWaypoints[Math.floor(Math.random() * roadWaypoints.length)];
+                group.position.copy(randomWaypoint);
+            }
+            
+            // Données d'animation
+            group.userData = {
+                speed: Math.random() * 0.1 + 0.05,
+                targetWaypoint: Math.floor(Math.random() * roadWaypoints.length),
+                wheelRotation: 0
+            };
+            
+            scene.add(group);
+            cars.push(group);
         }
         
         // Création d'un arbre
@@ -408,6 +651,62 @@
             roads.push(line);
         }
         
+        // Mise à jour des villageois
+        function updateVillagers() {
+            villagers.forEach(villager => {
+                if (roadWaypoints.length === 0) return;
+                
+                const target = roadWaypoints[villager.userData.targetWaypoint];
+                const direction = new THREE.Vector3().subVectors(target, villager.position).normalize();
+                
+                // Déplacement
+                villager.position.add(direction.multiplyScalar(villager.userData.speed));
+                
+                // Rotation vers la cible
+                const angle = Math.atan2(direction.x, direction.z);
+                villager.rotation.y = angle;
+                
+                // Animation de marche
+                villager.userData.walkCycle += 0.2;
+                villager.children[0].rotation.x = Math.sin(villager.userData.walkCycle) * 0.1;
+                
+                // Si proche du waypoint, choisir un nouveau
+                if (villager.position.distanceTo(target) < 1) {
+                    villager.userData.targetWaypoint = Math.floor(Math.random() * roadWaypoints.length);
+                }
+            });
+        }
+        
+        // Mise à jour des voitures
+        function updateCars() {
+            cars.forEach(car => {
+                if (roadWaypoints.length === 0) return;
+                
+                const target = roadWaypoints[car.userData.targetWaypoint];
+                const direction = new THREE.Vector3().subVectors(target, car.position).normalize();
+                
+                // Déplacement
+                car.position.add(direction.multiplyScalar(car.userData.speed));
+                
+                // Rotation vers la cible
+                const angle = Math.atan2(direction.x, direction.z);
+                car.rotation.y = angle;
+                
+                // Rotation des roues
+                car.userData.wheelRotation += car.userData.speed;
+                car.children.forEach((child, index) => {
+                    if (index >= 2 && index <= 5) { // Les roues
+                        child.rotation.x = car.userData.wheelRotation;
+                    }
+                });
+                
+                // Si proche du waypoint, choisir un nouveau
+                if (car.position.distanceTo(target) < 1) {
+                    car.userData.targetWaypoint = Math.floor(Math.random() * roadWaypoints.length);
+                }
+            });
+        }
+        
         // Nettoyage de la ville
         function clearCity() {
             buildings.forEach(b => {
@@ -428,17 +727,34 @@
                 r.geometry.dispose();
                 r.material.dispose();
             });
+            villagers.forEach(v => {
+                scene.remove(v);
+                v.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+            });
+            cars.forEach(c => {
+                scene.remove(c);
+                c.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+            });
             
             buildings = [];
             trees = [];
             roads = [];
+            villagers = [];
+            cars = [];
         }
         
         // Mise à jour des statistiques
         function updateStats() {
             document.getElementById('building-count').textContent = buildings.length;
             document.getElementById('tree-count').textContent = trees.length;
-            document.getElementById('road-count').textContent = roads.length;
+            document.getElementById('villager-count').textContent = villagers.length;
+            document.getElementById('car-count').textContent = cars.length;
         }
         
         // Animation
@@ -452,7 +768,6 @@
                 buildings.forEach((building, index) => {
                     const { originalY, speed, amplitude } = building.userData;
                     building.position.y = originalY + Math.sin(time * speed + index) * amplitude;
-                    building.rotation.y += 0.001;
                 });
                 
                 // Animation des arbres
@@ -460,13 +775,22 @@
                     tree.foliage.rotation.y += 0.005;
                     tree.foliage.position.y = tree.trunk.position.y + tree.trunk.geometry.parameters.height / 2 + 1 + Math.sin(time * 2 + index) * 0.1;
                 });
+                
+                // Mise à jour des villageois
+                updateVillagers();
+                
+                // Mise à jour des voitures
+                updateCars();
             }
+            
+            // Cycle jour/nuit
+            updateDayNight();
             
             updateControls();
             renderer.render(scene, camera);
         }
         
-        // Contrôles de la caméra (implémentation simple)
+        // Contrôles de la caméra
         let isMouseDown = false;
         let isRightMouseDown = false;
         let mouseX = 0;
@@ -554,6 +878,10 @@
         
         function toggleAnimation() {
             animationEnabled = !animationEnabled;
+        }
+        
+        function toggleDayNight() {
+            dayNightEnabled = !dayNightEnabled;
         }
         
         // Démarrage
