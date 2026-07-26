@@ -72,6 +72,29 @@ for(let i=0;i<p.count;i++)p.setY(i,Math.sin(t*2.5+p.getX(i)*.25)*.7+Math.cos(t*1
 p.needsUpdate=true;
 if(analyser&&audio&&!audio.paused){
 analyser.getByteFrequencyData(dataArray);
+let bass=0,mid=0,high=0;
+for(let i=0;i<10;i++)bass+=dataArray[i];
+for(let i=10;i<80;i++)mid+=dataArray[i];
+for(let i=80;i<200;i++)high+=dataArray[i];
+bass/=10;mid/=70;high/=120;
+if(bass>180&&Math.random()>.7)addBuilding(bass,mid,high);
+buildings.forEach(b=>{b.rotation.y+=.005;b.scale.y=1+Math.sin(t*3+b.position.x)*.02});
+const el=(Date.now()-startTime)/1000;
+document.getElementById('stats').textContent=`Bâtiments: ${buildings.length} | Temps: ${Math.floor(el)}s`;
+if(duration>0)document.getElementById('fill').style.width=Math.min(el/duration*100,100)+'%';
+}
+camera.position.x=Math.sin(t*.15)*75;
+camera.position.z=Math.cos(t*.15)*75;
+camera.position.y=35+Math.sin(t*.3)*8;
+camera.lookAt(0,5,0);
+renderer.render(scene,camera);
+}
+animate();
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body>
+</html>d){
+analyser.getByteFrequencyData(dataArray);
 let bass=dataArray.slice(0,12).reduce((a,b)=>a+b,0)/12;
 let mid=dataArray.slice(12,48).reduce((a,b)=>a+b,0)/36;
 let high=dataArray.slice(48,80).reduce((a,b)=>a+b,0)/32;
