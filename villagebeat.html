@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VillageBeat</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:sans-serif;background:#0a0a0a;color:#fff;overflow:hidden}canvas{display:block;width:100vw;height:100vh}#ui{position:fixed;top:20px;left:20px;z-index:10;background:rgba(0,0,0,.8);padding:20px;border-radius:8px;max-width:300px}h1{font-size:24px;margin-bottom:10px}button,label.file{display:inline-block;padding:10px 20px;margin:5px;background:#ff4500;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:14px}button:hover,label.file:hover{background:#ff6a33}input[type=file]{display:none}#stats{margin-top:15px;font-size:12px;opacity:.8}#bar{width:100%;height:4px;background:#333;margin-top:10px;border-radius:2px;overflow:hidden}#fill{height:100%;background:#ff4500;width:0%;transition:width .1s}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>🏘️ VillageBeat</h1>
+<p style="font-size:13px;margin-bottom:10px">Ta musique génère une ville au rythme des beats</p>
+<label class="file">🎵 Importer MP3<input type="file" id="f" accept="audio/*"></label>
+<div id="stats">Bâtiments: 0 · Temps: 0s</div>
+<div id="bar"><div id="fill"></div></div>
+</div>
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d'),f=document.getElementById('f'),stats=document.getElementById('stats'),fill=document.getElementById('fill');let w,h,buildings=[],audio,audioCtx,analyser,dataArray,bufferLength,startTime,duration=0;function resize(){w=c.width=window.innerWidth;h=c.height=window.innerHeight}resize();window.addEventListener('resize',resize);f.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const url=URL.createObjectURL(file);if(audio){audio.pause();audio=null}audio=new Audio(url);audioCtx=new(window.AudioContext||window.webkitAudioContext)();const src=audioCtx.createMediaElementSource(audio);analyser=audioCtx.createAnalyser();analyser.fftSize=256;bufferLength=analyser.frequencyBinCount;dataArray=new Uint8Array(bufferLength);src.connect(analyser);analyser.connect(audioCtx.destination);audio.play();audio.addEventListener('loadedmetadata',()=>{duration=audio.duration;startTime=Date.now()});buildings=[]});function addBuilding(x,y,w,h,col){buildings.push({x,y,w,h,col})}function draw(){ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,w,h);if(analyser){analyser.getByteFrequencyData(dataArray);let bass=dataArray.slice(0,8).reduce((a,b)=>a+b,0)/8;let mid=dataArray.slice(8,32).reduce((a,b)=>a+b,0)/24;if(bass>140&&Math.random()>.5){let bx=Math.random()*w,by=h-Math.random()*200,bw=20+Math.random()*40,bh=50+bass/2,col=`hsl(${mid},70%,60%)`;addBuilding(bx,by,bw,bh,col)}}buildings.forEach(b=>{ctx.fillStyle=b.col;ctx.fillRect(b.x,b.y-b.h,b.w,b.h);ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.strokeRect(b.x,b.y-b.h,b.w,b.h)});if(audio&&!audio.paused){let elapsed=(Date.now()-startTime)/1000;let progress=duration>0?elapsed/duration:0;fill.style.width=(progress*100)+'%';stats.textContent=`Bâtiments: ${buildings.length} · Temps: ${elapsed.toFixed(1)}s`}requestAnimationFrame(draw)}draw();
+</script>
+</body>
+</html>
